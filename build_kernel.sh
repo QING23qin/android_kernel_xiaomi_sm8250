@@ -86,13 +86,10 @@ fi
 echo "==========================================="
 echo " [*] Initializing Baseband-guard Setup"
 echo "==========================================="
-echo "[*] Downloading and running Baseband-guard remote setup script..."
-wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-
 echo "[*] Patching security/Kconfig for baseband_guard..."
+wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
 sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
 echo "[+] Baseband-guard setup finished."
-echo "==========================================="
 
 # ==========================================
 # AnyKernel3 Setup
@@ -106,7 +103,7 @@ git clone https://github.com/AstideLabs/AnyKernel3 -b kona --single-branch --dep
 echo "[+] AnyKernel3 cloned successfully."
 echo "[*] Adjusting AnyKernel3..."
 sed -i "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" anykernel/anykernel.sh
-echo "[*] AnyKernel3 adjusted successfully."
+echo "[+] AnyKernel3 adjusted successfully."
 echo "==========================================="
 
 # ==========================================
@@ -199,77 +196,56 @@ build_target() {
     # ----------------------------------------------------
     # Configuration tweaks
     # ----------------------------------------------------
-    
-    # 1. Baseband-guard configuration (Always applied)
     echo "[*] Injecting Baseband-guard configuration..."
     scripts/config --file "${OUT_DIR}/.config" -e BBG
 
-    # 2. KernelSU configurations
     if [ "$ENABLE_KSU" -eq 1 ]; then
         echo "[*] Injecting KernelSU & SUSFS configurations..."
-        scripts/config --file "${OUT_DIR}/.config" \
-            -e KSU \
-            -e THREAD_INFO_IN_TASK \
-            -e KSU_SUSFS
+        scripts/config --file "${OUT_DIR}/.config" -e KSU -e THREAD_INFO_IN_TASK -e KSU_SUSFS
     fi
 
-    # 3. MIUI configurations
     if [ "$OS_TYPE" == "miui" ]; then
         echo "[*] Injecting MIUI specific configurations..."
         scripts/config --file "${OUT_DIR}/.config" \
             --set-str STATIC_USERMODEHELPER_PATH /system/bin/micd \
-            -e PERF_CRITICAL_RT_TASK \
-            -e SF_BINDER \
-            -e OVERLAY_FS \
-            -e MIGT \
-            -e MIGT_ENERGY_MODEL \
-            -e MIHW \
-            -e PACKAGE_RUNTIME_INFO \
-            -e BINDER_OPT \
-            -e KPERFEVENTS \
-            -e PERF_HUMANTASK \
-            -d LTO_CLANG \
-            -e LTO_NONE \
-            -d SHADOW_CALL_STACK \
-            -e XIAOMI_MIUI \
-            -d MI_MEMORY_SYSFS \
-            -e TASK_DELAY_ACCT \
-            -e MIUI_ZRAM_MEMORY_TRACKING \
-            -e PERF_HELPER \
-            -e BOOTUP_RECLAIM \
-            -e MI_RECLAIM \
-            -e RTMM \
-            -e MILLET_CGROUP \
-            -e MILLET_SIG \
-            -e MILLET_BINDER \
-            -e MILLET_PKG \
-            -e MILLET_BINDER_GKI \
-            -e MILLET_CORE \
-            -e MILLET_HS \
-            -e BINDER_PRIO \
-            -d REKERNEL \
-            -d REKERNEL_NETWORK
+            -e PERF_CRITICAL_RT_TASK -e SF_BINDER -e OVERLAY_FS -e MIGT -e MIGT_ENERGY_MODEL \
+            -e MIHW -e PACKAGE_RUNTIME_INFO -e BINDER_OPT -e KPERFEVENTS -e PERF_HUMANTASK \
+            -d LTO_CLANG -e LTO_NONE -d SHADOW_CALL_STACK -e XIAOMI_MIUI -d MI_MEMORY_SYSFS \
+            -d TASK_DELAY_ACCT -e MIUI_ZRAM_MEMORY_TRACKING -e PERF_HELPER -e BOOTUP_RECLAIM \
+            -e MI_RECLAIM -e RTMM -e MILLET_CGROUP -e MILLET_SIG -e MILLET_BINDER \
+            -e MILLET_PKG -e MILLET_BINDER_GKI -e MILLET_CORE -e MILLET_HS -e BINDER_PRIO \
+            -d REKERNEL -d REKERNEL_NETWORK
     fi
 
-    # 4. AOSP configurations
     if [ "$OS_TYPE" == "aosp" ]; then
         echo "[*] Injecting AOSP specific configurations..."
-        scripts/config --file "${OUT_DIR}/.config" \
-            -e REKERNEL \
-            -e REKERNEL_NETWORK
+        scripts/config --file "${OUT_DIR}/.config" -e REKERNEL -e REKERNEL_NETWORK
     fi
 
-    # We always need to re-evaluate dependencies because BBG is injected unconditionally
+    # The defconfig is already normalized before the build. Re-evaluate all
+    # Kconfig dependencies after CI/runtime injections.
     echo "[*] Updating config (make olddefconfig)..."
     make "${MAKE_OPTS[@]}" olddefconfig
+
+    # Final configuration gate BEFORE compiling. This catches a Kconfig
+    # dependency silently changing a requested DroidSpaces option.
+    if [ "$DEVICE_NAME" == "lmi" ]; then
+        echo "[*] Verifying final DroidSpaces .config before compilation..."
+        for symbol in CGROUP_PIDS CGROUP_DEVICE PID_NS UTS_NS IPC_NS NET_NS SECCOMP_FILTER DEVTMPFS OVERLAY_FS VETH; do
+            grep -q "^CONFIG_${symbol}=y$" "${OUT_DIR}/.config" || {
+                echo "[!] CONFIG_${symbol} is not enabled after olddefconfig"
+                exit 1
+            }
+        done
+        grep -E '^CONFIG_(CGROUP_PIDS|CGROUP_DEVICE|PID_NS|UTS_NS|IPC_NS|NET_NS|SECCOMP_FILTER|DEVTMPFS|OVERLAY_FS|VETH)=y$' "${OUT_DIR}/.config"
+    fi
 
     # ----------------------------------------------------
     # Compilation
     # ----------------------------------------------------
     echo "[*] Building kernel..."
-    make "${MAKE_OPTS[@]}" 
+    make "${MAKE_OPTS[@]}"
 
-    # Restore DTS backup for MIUI
     if [ "$OS_TYPE" == "miui" ]; then
         echo "[*] Restoring DTS backups..."
         rm -rf "${DTS_SOURCE}"
@@ -278,22 +254,37 @@ build_target() {
 
     echo "==========================================="
     if [ -f "${OUT_DIR}/arch/arm64/boot/Image" ]; then
+        KERNEL_IMAGE="${OUT_DIR}/arch/arm64/boot/Image"
         echo "[+] $OS_TYPE Build Successful!"
-        echo "[+] Kernel Image path: ${OUT_DIR}/arch/arm64/boot/Image"
+        echo "[+] Kernel Image path: ${KERNEL_IMAGE}"
+
+        # Do not trust only O=.config: verify the configuration embedded in
+        # the EXACT Image that will be packed/flashed. This detects accidental
+        # packaging of a different/stale kernel and makes /proc/config.gz
+        # reproducible after flashing.
+        echo "[*] Extracting IKCONFIG from the final kernel Image..."
+        scripts/extract-ikconfig "${KERNEL_IMAGE}" > "${OUT_DIR}/.image_config"
+        echo "[*] Verifying DroidSpaces config embedded in Image..."
+        for symbol in CGROUP_PIDS CGROUP_DEVICE PID_NS UTS_NS IPC_NS NET_NS SECCOMP_FILTER DEVTMPFS OVERLAY_FS VETH; do
+            grep -q "^CONFIG_${symbol}=y$" "${OUT_DIR}/.image_config" || {
+                echo "[!] CONFIG_${symbol} is missing from the final kernel Image"
+                exit 1
+            }
+        done
+        echo "[+] Final Image contains all required DroidSpaces CONFIG options."
+        sha256sum "${KERNEL_IMAGE}" > "${OUT_DIR}/Image.sha256"
+        sha256sum "${KERNEL_IMAGE}"
 
         echo "[*] Packaging to AnyKernel3 ($OS_TYPE)..."
-        # 确保独立打包：清空现有的 kernels 目录
         rm -rf anykernel/kernels/*
         mkdir -p "anykernel/kernels/${OS_TYPE}/"
-        
-        cp "${OUT_DIR}/arch/arm64/boot/Image" "anykernel/kernels/${OS_TYPE}/"
+        cp "${KERNEL_IMAGE}" "anykernel/kernels/${OS_TYPE}/"
         cp "${OUT_DIR}/arch/arm64/boot/dtb" "anykernel/kernels/${OS_TYPE}/"
         
         if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
             cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" "anykernel/kernels/${OS_TYPE}/"
         fi
         
-        # 确定 ZIP 文件名
         local KSU_ZIP_STR="NoKernelSU"
         if [ "$ENABLE_KSU" -eq 1 ]; then
             KSU_ZIP_STR="ReSukiSU-SuSFS"
@@ -315,9 +306,6 @@ build_target() {
     fi
 }
 
-# ==========================================
-# Execute builds based on target OS
-# ==========================================
 if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ]; then
     build_target "aosp"
 fi
