@@ -73,6 +73,11 @@ jobs:
         wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
         tar -zxvf Clang-16.0.6-20260807.tar.gz
 
+    - name: Pin ReSukiSU to SUSFS-compatible commit
+      if: ${{ github.event.inputs.ksu == true }}
+      run: |
+        sed -i 's#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c#' build_kernel.sh
+
     - name: Run Build Script
       run: |
         chmod +x build_kernel.sh
