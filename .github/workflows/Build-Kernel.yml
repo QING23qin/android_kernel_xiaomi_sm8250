@@ -1,0 +1,91 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Target Device Code (设备代号)
+        required: true
+        default: lmi
+        type: choice
+        options:
+          - alioth
+          - apollo
+          - cas
+          - cmi
+          - dagu
+          - elish
+          - enuma
+          - lmi
+          - munch
+          - pipa
+          - psyche
+          - thyme
+          - umi
+      ksu:
+        description: Enable KernelSU (ReSukiSU)
+        required: true
+        default: false
+        type: boolean
+      target_os:
+        description: Target OS (目标系统)
+        required: true
+        default: both
+        type: choice
+        options:
+          - aosp
+          - miui
+          - both
+
+permissions:
+  contents: read
+
+jobs:
+  build-kernel:
+    name: Build Kernel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex gawk git gnupg gperf imagemagick libncurses-dev lib32readline-dev lib32z1-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3
+      - name: Setup zyc-clang 16 Toolchain
+        run: |
+          mkdir -p "$HOME/zyc-clang"
+          cd "$HOME/zyc-clang"
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
+          tar -zxf Clang-16.0.6-20260807.tar.gz
+      - name: Pin ReSukiSU
+        if: ${{ inputs.ksu }}
+        run: |
+          set -e
+          sed -i 's#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c#' build_kernel.sh
+      - name: Prepare SUSFS for 4.19
+        if: ${{ inputs.ksu }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('build_kernel.sh')
+          text = path.read_text()
+          marker = '    echo "[+] KernelSU setup finished."\n'
+          block = '''    echo "[*] Preparing SUSFS kernel-side compatibility for Linux 4.19..."\n    SUSFS_DIR="${RUNNER_TEMP}/susfs4ksu"\n    rm -rf "${SUSFS_DIR}"\n    git clone --depth=1 --branch kernel-4.19 https://github.com/ShirkNeko/susfs4ksu.git "${SUSFS_DIR}"\n    cp "${SUSFS_DIR}/kernel_patches/fs/susfs.c" fs/susfs.c\n    cp "${SUSFS_DIR}/kernel_patches/include/linux/susfs.h" include/linux/susfs.h\n    cp "${SUSFS_DIR}/kernel_patches/include/linux/susfs_def.h" include/linux/susfs_def.h\n    patch --forward -p1 < "${SUSFS_DIR}/kernel_patches/50_add_susfs_in_kernel-4.19.patch"\n'''
+          if marker not in text:
+              raise SystemExit('KernelSU setup marker not found in build_kernel.sh')
+          if 'Preparing SUSFS kernel-side compatibility for Linux 4.19' not in text:
+              path.write_text(text.replace(marker, marker + '\n' + block, 1))
+          PY
+      - name: Run Build Script
+        run: |
+          chmod +x build_kernel.sh
+          args="${{ inputs.device }}"
+          if [ "${{ inputs.ksu }}" = "true" ]; then args="$args ksu"; fi
+          if [ "${{ inputs.target_os }}" != "both" ]; then args="$args ${{ inputs.target_os }}"; fi
+          ./build_kernel.sh $args
+      - name: Upload Flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: APTKernel-${{ inputs.device }}-${{ inputs.target_os }}-${{ github.run_id }}
+          path: APTKernel_*.zip
+          compression-level: 0
