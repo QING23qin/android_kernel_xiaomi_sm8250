@@ -238,7 +238,7 @@ build_target() {
             -e PERF_HELPER \
             -e BOOTUP_RECLAIM \
             -e MI_RECLAIM \
-            -e RTMM \
+            -e RTMM
     fi
 
     # 4. AOSP configurations
