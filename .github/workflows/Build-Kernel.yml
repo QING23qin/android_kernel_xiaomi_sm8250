@@ -79,6 +79,14 @@ jobs:
           sed -i 's#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c#' build_kernel.sh
           grep -F 'bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c' build_kernel.sh
 
+      - name: Disable ccache for LMI DroidSpaces validation
+        if: ${{ inputs.device == 'lmi' }}
+        run: |
+          set -e
+          echo "CCACHE_DISABLE=1" >> "$GITHUB_ENV"
+          ccache -C
+          echo "[*] ccache disabled for this validation build"
+
       - name: Run Build Script
         run: |
           chmod +x build_kernel.sh
