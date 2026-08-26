@@ -73,12 +73,41 @@ jobs:
         wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
         tar -zxvf Clang-16.0.6-20260807.tar.gz
 
-    - name: Pin ReSukiSU to known-good non-SUSFS commit for 4.19
+    - name: Pin ReSukiSU to known-good SUSFS-compatible commit for 4.19
       if: ${{ inputs.ksu }}
       run: |
         set -e
         sed -i 's#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c#' build_kernel.sh
         grep -F 'bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c' build_kernel.sh
+
+    - name: Prepare SUSFS kernel-side patch for 4.19
+      if: ${{ inputs.ksu }}
+      run: |
+        python3 - <<'PY'
+        from pathlib import Path
+
+        path = Path("build_kernel.sh")
+        text = path.read_text()
+        marker = '    echo "[+] KernelSU setup finished."\n'
+        block = r'''    echo "[*] Preparing SUSFS kernel-side compatibility for Linux 4.19..."
+        SUSFS_DIR="${RUNNER_TEMP}/susfs4ksu"
+        rm -rf "${SUSFS_DIR}"
+        git clone --depth=1 --branch kernel-4.19 https://github.com/ShirkNeko/susfs4ksu.git "${SUSFS_DIR}"
+
+        cp "${SUSFS_DIR}/kernel_patches/fs/susfs.c" fs/susfs.c
+        cp "${SUSFS_DIR}/kernel_patches/include/linux/susfs.h" include/linux/susfs.h
+        cp "${SUSFS_DIR}/kernel_patches/include/linux/susfs_def.h" include/linux/susfs_def.h
+
+        echo "[*] Applying SUSFS 4.19 kernel patch..."
+        patch --forward -p1 < "${SUSFS_DIR}/kernel_patches/50_add_susfs_in_kernel-4.19.patch"
+        echo "[+] SUSFS kernel-side compatibility prepared."
+'''
+        if marker not in text:
+            raise SystemExit("KernelSU setup marker not found in build_kernel.sh")
+        if "Preparing SUSFS kernel-side compatibility for Linux 4.19" not in text:
+            text = text.replace(marker, marker + "\n" + block, 1)
+            path.write_text(text)
+        PY
 
     - name: Run Build Script
       run: |
