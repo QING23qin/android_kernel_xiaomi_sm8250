@@ -97,7 +97,7 @@ jobs:
           echo "[*] Applying SUSFS 4.19 kernel patch..."
           patch --forward -p1 < "${SUSFS_DIR}/kernel_patches/50_add_susfs_in_kernel-4.19.patch"
           echo "[+] SUSFS kernel-side compatibility prepared."
-  '''
+'''
           if marker not in text:
               raise SystemExit("KernelSU setup marker not found in build_kernel.sh")
           if "Preparing SUSFS kernel-side compatibility for Linux 4.19" not in text:
