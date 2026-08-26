@@ -48,6 +48,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Normalize DroidSpaces kernel configuration
+        if: ${{ inputs.device == 'lmi' }}
+        run: |
+          chmod +x scripts/prepare_droidspaces_config.sh
+          ./scripts/prepare_droidspaces_config.sh lmi
+
       - name: Set up Environment
         run: |
           sudo apt-get update
@@ -58,7 +64,7 @@ jobs:
           mkdir -p "$HOME/zyc-clang"
           cd "$HOME/zyc-clang"
           wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
-          tar -zxf Clang-16.0.6-20260807.tar.gz
+          tar -zxf Clang-16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
 
       - name: Pin ReSukiSU to known-good SUSFS-compatible commit for 4.19
         if: ${{ inputs.ksu }}
@@ -75,6 +81,23 @@ jobs:
           if [ "${{ inputs.target_os }}" != "both" ]; then args="$args ${{ inputs.target_os }}"; fi
           echo "Executing: ./build_kernel.sh $args"
           ./build_kernel.sh $args
+
+      - name: Verify generated DroidSpaces kernel configuration
+        if: ${{ inputs.device == 'lmi' }}
+        run: |
+          set -e
+          found=0
+          for config in out_aosp/.config out_miui/.config; do
+            if [ -f "$config" ]; then
+              found=1
+              echo "===== $config ====="
+              grep -E '^(CONFIG_(CGROUP_PIDS|CGROUP_DEVICE|PID_NS|UTS_NS|IPC_NS|NET_NS|SECCOMP_FILTER|DEVTMPFS|OVERLAY_FS))=' "$config" || true
+              for symbol in CGROUP_PIDS CGROUP_DEVICE PID_NS UTS_NS IPC_NS NET_NS SECCOMP_FILTER DEVTMPFS; do
+                grep -q "^CONFIG_${symbol}=y$" "$config" || { echo "[!] CONFIG_${symbol} is not enabled in $config"; exit 1; }
+              done
+            fi
+          done
+          [ "$found" -eq 1 ] || { echo "[!] No generated .config found"; exit 1; }
 
       - name: Upload Flashable ZIP
         uses: actions/upload-artifact@v4
