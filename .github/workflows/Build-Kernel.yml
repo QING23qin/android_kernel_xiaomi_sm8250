@@ -61,10 +61,16 @@ jobs:
 
       - name: Setup zyc-clang 16 Toolchain
         run: |
+          set -e
           mkdir -p "$HOME/zyc-clang"
           cd "$HOME/zyc-clang"
-          wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
-          tar -zxf Clang-16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
+          CLANG_ARCHIVE="Clang-16.0.6-20260807.tar.gz"
+          CLANG_URL="https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/${CLANG_ARCHIVE}"
+          wget -q --show-progress -O "$CLANG_ARCHIVE" "$CLANG_URL"
+          test -s "$CLANG_ARCHIVE"
+          tar -zxf "$CLANG_ARCHIVE"
+          test -x "$HOME/zyc-clang/bin/clang"
+          "$HOME/zyc-clang/bin/clang" --version
 
       - name: Pin ReSukiSU to known-good SUSFS-compatible commit for 4.19
         if: ${{ inputs.ksu }}
