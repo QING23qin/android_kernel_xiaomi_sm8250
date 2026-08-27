@@ -68,21 +68,57 @@ rm -rf anykernel
 git clone https://github.com/AstideLabs/AnyKernel3 -b kona --single-branch --depth=1 anykernel
 sed -i "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" anykernel/anykernel.sh
 
-# DroidSpaces cgroup-v2 compatibility:
-# the container cgroup is used as the cgroup-namespace root and intentionally
-# contains the monitor process. Apply the namespace-root mixable patch before
-# either target is configured/built.
-DROIDSPACES_CGROUP_PATCH="patches/droidspaces-cgroupns-root-mixable.patch"
-if [ -f "$DROIDSPACES_CGROUP_PATCH" ]; then
-    echo "[*] Applying DroidSpaces cgroup namespace root compatibility patch..."
-    if ! patch -p1 --forward < "$DROIDSPACES_CGROUP_PATCH"; then
-        if grep -q 'return cgrp == current_cgns_cgroup_dfl();' kernel/cgroup/cgroup.c; then
-            echo "[+] DroidSpaces cgroup compatibility patch is already applied."
-        else
-            echo "[!] Failed to apply DroidSpaces cgroup compatibility patch"
-            exit 1
-        fi
-    fi
+# DroidSpaces cgroup-v2 compatibility.
+# Do not use an external unified-diff patch here. This kernel is a legacy
+# 4.19 tree and the exact surrounding context can change as setup scripts
+# modify the working tree. Apply a precise source transformation instead.
+if [ "$DEVICE_NAME" == "lmi" ]; then
+    echo "[*] Applying DroidSpaces cgroup namespace root compatibility..."
+    python3 - <<'PY'
+from pathlib import Path
+
+path = Path("kernel/cgroup/cgroup.c")
+text = path.read_text()
+old = "\treturn !cgroup_parent(cgrp);"
+new = """\tif (!cgroup_parent(cgrp))
+\t\treturn true;
+
+\t/*
+\t * DroidSpaces uses a container cgroup as the root of a cgroup
+\t * namespace and intentionally keeps its monitor in that cgroup.
+\t * Allow that namespace root to host nested resource domains.
+\t */
+\tif (current->nsproxy && current->nsproxy->cgroup_ns &&
+\t    current->nsproxy->cgroup_ns->root_cset->dfl_cgrp == cgrp)
+\t\treturn true;
+
+\treturn false;"""
+
+count = text.count(old)
+if count != 1:
+    raise SystemExit(
+        f"[!] Expected exactly one cgroup_is_mixable return statement, found {count}"
+    )
+
+start = text.index(old)
+func_start = text.rfind("static bool cgroup_is_mixable", 0, start)
+if func_start < 0:
+    raise SystemExit("[!] cgroup_is_mixable() was not found")
+
+func_end = text.find("\n}", start)
+if func_end < 0:
+    raise SystemExit("[!] cgroup_is_mixable() closing brace was not found")
+
+segment = text[func_start:func_end]
+if "return !cgroup_parent(cgrp);" not in segment:
+    raise SystemExit("[!] Target return is not inside cgroup_is_mixable()")
+
+path.write_text(text[:start] + new + text[start + len(old):])
+print("[+] DroidSpaces cgroup namespace root compatibility applied.")
+PY
+
+    echo "[*] Verifying DroidSpaces cgroup compatibility source change..."
+    grep -A18 -B4 'static bool cgroup_is_mixable' kernel/cgroup/cgroup.c
 fi
 
 build_target() {
