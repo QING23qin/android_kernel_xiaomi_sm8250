@@ -3,15 +3,8 @@ From: QING23qin <112809742+QING23qin@users.noreply.github.com>
 Date: Thu, 27 Aug 2026 00:00:00 +0000
 Subject: [PATCH] cgroup: allow namespace root to host nested controllers
 
-DroidSpaces uses the container cgroup as the root of a cgroup namespace
-while keeping its monitor process in that cgroup. The normal cgroup v2
-no-internal-process rule otherwise rejects enabling domain controllers
-below such a populated namespace root.
-
-Treat the cgroup namespace root in the default hierarchy as mixable. The
-real hierarchy root already has this property. This keeps the exception
-scoped to the namespace root rather than weakening the rule for arbitrary
-cgroups.
+Allow the cgroup namespace root to contain both the monitor task and
+nested domain controllers, as required by the DroidSpaces layout.
 
 ---
  kernel/cgroup/cgroup.c | 12 +++++++++++-
@@ -20,9 +13,8 @@ cgroups.
 diff --git a/kernel/cgroup/cgroup.c b/kernel/cgroup/cgroup.c
 --- a/kernel/cgroup/cgroup.c
 +++ b/kernel/cgroup/cgroup.c
-@@ -320,7 +320,17 @@ static bool cgroup_is_mixable(struct cgroup *cgrp)
+@@ -320,3 +320,13 @@
  	 * root and a parent of resource domains at the same time.
- 	 */
 -	return !cgroup_parent(cgrp);
 +	if (!cgroup_parent(cgrp))
 +		return true;
@@ -37,7 +29,4 @@ diff --git a/kernel/cgroup/cgroup.c b/kernel/cgroup/cgroup.c
 +		return true;
 +
 +	return false;
- }
- 
- /* can @cgrp become a thread root? should always be true for a thread root */
- static bool cgroup_can_be_thread_root(struct cgroup *cgrp)
++ /* can @cgrp become a thread root? should always be true for a thread root */
