@@ -14,16 +14,13 @@ scoped to the namespace root rather than weakening the rule for arbitrary
 cgroups.
 
 ---
- kernel/cgroup/cgroup.c | 11 ++++++++++-
- 1 file changed, 10 insertions(+), 1 deletion(-)
+ kernel/cgroup/cgroup.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/kernel/cgroup/cgroup.c b/kernel/cgroup/cgroup.c
 --- a/kernel/cgroup/cgroup.c
 +++ b/kernel/cgroup/cgroup.c
-@@ -1040,8 +1040,18 @@ static bool cgroup_is_mixable(struct cgroup *cgrp)
- 	/*
- 	 * Root isn't under domain level resource control exempting it from
- 	 * the no-internal-process constraint, so it can serve as a thread
+@@ -320,7 +320,17 @@ static bool cgroup_is_mixable(struct cgroup *cgrp)
  	 * root and a parent of resource domains at the same time.
  	 */
 -	return !cgroup_parent(cgrp);
@@ -36,8 +33,7 @@ diff --git a/kernel/cgroup/cgroup.c b/kernel/cgroup/cgroup.c
 +	 * Allow that namespace root to host nested resource domains.
 +	 */
 +	if (current->nsproxy && current->nsproxy->cgroup_ns &&
-+	    cgrp == cset_cgroup_from_root(
-+		current->nsproxy->cgroup_ns->root_cset, &cgrp_dfl_root))
++	    current->nsproxy->cgroup_ns->root_cset->dfl_cgrp == cgrp)
 +		return true;
 +
 +	return false;
