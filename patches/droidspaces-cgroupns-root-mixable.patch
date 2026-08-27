@@ -14,13 +14,13 @@ scoped to the namespace root rather than weakening the rule for arbitrary
 cgroups.
 
 ---
- kernel/cgroup/cgroup.c | 13 ++++++++++++-
- 1 file changed, 12 insertions(+), 1 deletion(-)
+ kernel/cgroup/cgroup.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
 
 diff --git a/kernel/cgroup/cgroup.c b/kernel/cgroup/cgroup.c
 --- a/kernel/cgroup/cgroup.c
 +++ b/kernel/cgroup/cgroup.c
-@@ -1040,9 +1040,20 @@ static bool cgroup_is_mixable(struct cgroup *cgrp)
+@@ -1040,8 +1040,18 @@ static bool cgroup_is_mixable(struct cgroup *cgrp)
  	/*
  	 * Root isn't under domain level resource control exempting it from
  	 * the no-internal-process constraint, so it can serve as a thread
