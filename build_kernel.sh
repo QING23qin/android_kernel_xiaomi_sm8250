@@ -68,6 +68,23 @@ rm -rf anykernel
 git clone https://github.com/AstideLabs/AnyKernel3 -b kona --single-branch --depth=1 anykernel
 sed -i "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" anykernel/anykernel.sh
 
+# DroidSpaces cgroup-v2 compatibility:
+# the container cgroup is used as the cgroup-namespace root and intentionally
+# contains the monitor process. Apply the namespace-root mixable patch before
+# either target is configured/built.
+DROIDSPACES_CGROUP_PATCH="patches/droidspaces-cgroupns-root-mixable.patch"
+if [ -f "$DROIDSPACES_CGROUP_PATCH" ]; then
+    echo "[*] Applying DroidSpaces cgroup namespace root compatibility patch..."
+    if ! patch -p1 --forward < "$DROIDSPACES_CGROUP_PATCH"; then
+        if grep -q 'return cgrp == current_cgns_cgroup_dfl();' kernel/cgroup/cgroup.c; then
+            echo "[+] DroidSpaces cgroup compatibility patch is already applied."
+        else
+            echo "[!] Failed to apply DroidSpaces cgroup compatibility patch"
+            exit 1
+        fi
+    fi
+fi
+
 build_target() {
     local OS_TYPE=$1
     echo "==========================================="
