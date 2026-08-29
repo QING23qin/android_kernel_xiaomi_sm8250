@@ -2153,7 +2153,6 @@ struct cgroup_subsys cpuset_cgrp_subsys = {
 	.legacy_cftypes = files,
     .dfl_cftypes = files,
     .early_init = true,
-    .threaded = true,
 };
 
 /**
