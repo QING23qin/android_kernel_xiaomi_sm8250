@@ -2150,8 +2150,10 @@ struct cgroup_subsys cpuset_cgrp_subsys = {
 	.post_attach	= cpuset_post_attach,
 	.bind		= cpuset_bind,
 	.fork		= cpuset_fork,
-	.legacy_cftypes	= files,
-	.early_init	= true,
+	.legacy_cftypes = files,
+    .dfl_cftypes = files,
+    .early_init = true,
+    .threaded = true,
 };
 
 /**
