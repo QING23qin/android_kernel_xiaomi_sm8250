@@ -1,3 +1,18 @@
+基于 ApartTUSITU's Xiaomi SM8250 Kernel 项目进行优化
+针对 DroidSpaces ，完全支持Droidspaces的内核配置（LMI内核）
+
+采用混合 cgroup 架构：
+- cgroup v2 支持 CPU、IO、Memory、PIDs 控制；
+- cgroup v1 保留 cpuset 控制
+
+
+
+
+
+
+
+
+
 # ApartTUSITU's Xiaomi SM8250 Kernel  
 
 ## Warning
