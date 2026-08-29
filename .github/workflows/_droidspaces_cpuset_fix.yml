@@ -1,0 +1,46 @@
+name: Apply DroidSpaces cpuset v2 compatibility fix
+
+on:
+  push:
+    branches:
+      - fix/droidspaces-kconfig
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'fix: expose cpuset controller to cgroup v2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: fix/droidspaces-kconfig
+          fetch-depth: 0
+
+      - name: Patch cpuset cgroup v2 registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('kernel/cgroup/cpuset.c')
+          s = p.read_text()
+          old = '''\t.legacy_cftypes\t= files,\n\t.early_init\t\t= true,\n'''
+          new = '''\t.legacy_cftypes\t= files,\n\t.dfl_cftypes\t= files,\n\t.early_init\t\t= true,\n\t.threaded\t\t= true,\n'''
+          if old not in s:
+              raise SystemExit('expected cpuset_cgrp_subsys block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Commit fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add kernel/cgroup/cpuset.c
+          git rm .github/workflows/_droidspaces_cpuset_fix.yml
+          git commit -m 'fix: expose cpuset controller to cgroup v2'
+          git push origin HEAD:fix/droidspaces-kconfig
