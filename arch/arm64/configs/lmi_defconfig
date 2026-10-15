@@ -869,6 +869,10 @@ CONFIG_IP6_NF_TARGET_MASQUERADE=y
 CONFIG_NF_CONNTRACK_IPV6=y
 CONFIG_NF_NAT_IPV6=y
 
+# Macvlan mode (--net=macvlan): a container straight on a wired LAN.
+# Optional: without it, macvlan mode is unavailable
+CONFIG_MACVLAN=y
+
 # Disable this on older kernels to make internet work
 CONFIG_ANDROID_PARANOID_NETWORK=n
 
