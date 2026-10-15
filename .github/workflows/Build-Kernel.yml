@@ -79,7 +79,7 @@ jobs:
           marker = '    echo "[+] KernelSU setup finished."\n'
           block = r'''    echo "[*] Pinning BakaSU to a SUSFS-compatible commit..."
           KSU_COMMIT="b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c"
-          git -C KernelSU fetch --depth=1 origin "$KSU_COMMIT"
+          git -C KernelSU fetch --depth=1 https://github.com/Baka-SU/BakaSU.git "$KSU_COMMIT"
           git -C KernelSU checkout --detach "$KSU_COMMIT"
           if grep -qF '$(error Please wait susfs update.)' KernelSU/kernel/tools/susfs_compat.mk; then
               echo "[!] Pinned BakaSU commit still blocks SUSFS; refusing to bypass upstream compatibility guard."
