@@ -76,7 +76,7 @@ jobs:
 
           path = Path("build_kernel.sh")
           text = path.read_text()
-          marker = '    echo "[+] KernelSU setup finished."\\n'
+          marker = '    echo "[+] KernelSU setup finished."\n'
           block = r'''    echo "[*] Pinning BakaSU to a SUSFS-compatible commit..."
           KSU_COMMIT="b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c"
           git -C KernelSU fetch --depth=1 origin "$KSU_COMMIT"
@@ -100,7 +100,7 @@ jobs:
           if marker not in text:
               raise SystemExit("KernelSU setup marker not found in build_kernel.sh")
           if "Pinning BakaSU to a SUSFS-compatible commit" not in text:
-              text = text.replace(marker, marker + "\\n" + block, 1)
+              text = text.replace(marker, marker + "\n" + block, 1)
               path.write_text(text)
           PY
 
