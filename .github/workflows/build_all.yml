@@ -87,7 +87,17 @@ jobs:
           path = Path("build_kernel.sh")
           text = path.read_text()
           marker = '    echo "[+] KernelSU setup finished."\n'
-          block = r'''    echo "[*] Preparing SUSFS kernel-side compatibility for Linux 4.19..."
+          block = r'''    echo "[*] Verifying pinned BakaSU commit and SUSFS compatibility..."
+    KSU_COMMIT="b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c"
+    git -C KernelSU fetch --depth=1 origin "$KSU_COMMIT"
+    git -C KernelSU checkout --detach "$KSU_COMMIT"
+    if grep -qF '$(error Please wait susfs update.)' KernelSU/kernel/tools/susfs_compat.mk; then
+      echo "[!] Pinned BakaSU commit still blocks SUSFS; refusing to bypass upstream compatibility guard."
+      exit 1
+    fi
+    echo "[+] BakaSU commit: $(git -C KernelSU rev-parse --short=12 HEAD)"
+
+    echo "[*] Preparing SUSFS kernel-side compatibility for Linux 4.19..."
           SUSFS_DIR="${RUNNER_TEMP}/susfs4ksu"
           rm -rf "${SUSFS_DIR}"
           git clone --depth=1 --branch kernel-4.19 https://github.com/ShirkNeko/susfs4ksu.git "${SUSFS_DIR}"
