@@ -122,7 +122,7 @@ jobs:
 
           path = Path("build_kernel.sh")
           text = path.read_text()
-          marker = '    echo "[+] KernelSU setup finished."\\n'
+          marker = '    echo "[+] KernelSU setup finished."\n'
           block = r'''    # Keep existing SUSFS sources; remove only the stale ReSukiSU build guard.
           grep -q '#define SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || {
               echo "[!] Expected SUSFS v2.3.0; refusing to bypass the compatibility guard."
@@ -137,7 +137,7 @@ jobs:
           if marker not in text:
               raise SystemExit("KernelSU setup marker not found in build_kernel.sh")
           if "Kept existing SUSFS v2.3.0" not in text:
-              text = text.replace(marker, marker + "\\n" + block, 1)
+              text = text.replace(marker, marker + "\n" + block, 1)
               path.write_text(text)
           PY
 
