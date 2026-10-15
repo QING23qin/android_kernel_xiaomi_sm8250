@@ -60,14 +60,7 @@ jobs:
           wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
           tar -zxf Clang-16.0.6-20260807.tar.gz
 
-      - name: Pin ReSukiSU to known-good SUSFS-compatible commit for 4.19
-        if: ${{ inputs.ksu }}
-        run: |
-          set -e
-          sed -i 's#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash#curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c#' build_kernel.sh
-          grep -F 'bash -s -- b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c' build_kernel.sh
-
-      - name: Prepare pinned BakaSU and SUSFS 4.19 compatibility
+      - name: Update SUSFS kernel sources for Linux 4.19
         if: ${{ inputs.ksu }}
         run: |
           set -euo pipefail
@@ -77,29 +70,46 @@ jobs:
           path = Path("build_kernel.sh")
           text = path.read_text()
           marker = '    echo "[+] KernelSU setup finished."\n'
-          block = r'''    echo "[*] Pinning BakaSU to a SUSFS-compatible commit..."
-          KSU_COMMIT="b2ac2fc8703ce9f5226e2a38a59f8b72f8a3005c"
-          git -C KernelSU fetch --depth=1 https://github.com/Baka-SU/BakaSU.git "$KSU_COMMIT"
-          git -C KernelSU checkout --detach "$KSU_COMMIT"
-          if grep -qF '$(error Please wait susfs update.)' KernelSU/kernel/tools/susfs_compat.mk; then
-              echo "[!] Pinned BakaSU commit still blocks SUSFS; refusing to bypass upstream compatibility guard."
-              exit 1
-          fi
-          echo "[+] BakaSU commit: $(git -C KernelSU rev-parse --short=12 HEAD)"
-
-          echo "[*] Preparing SUSFS kernel-side patch for Linux 4.19..."
+          block = r'''    echo "[*] Updating SUSFS kernel-side sources for Linux 4.19..."
           SUSFS_DIR="${RUNNER_TEMP}/susfs4ksu"
           rm -rf "${SUSFS_DIR}"
           git clone --depth=1 --branch kernel-4.19 https://github.com/ShirkNeko/susfs4ksu.git "${SUSFS_DIR}"
+
+          SUSFS_HEADER="${SUSFS_DIR}/kernel_patches/include/linux/susfs.h"
+          grep -q '#define SUSFS_VERSION "v1.5.9"' "${SUSFS_HEADER}" || {
+              echo "[!] Expected SUSFS v1.5.9 source not found; refusing an unverified update."
+              exit 1
+          }
           cp "${SUSFS_DIR}/kernel_patches/fs/susfs.c" fs/susfs.c
-          cp "${SUSFS_DIR}/kernel_patches/include/linux/susfs.h" include/linux/susfs.h
+          cp "${SUSFS_HEADER}" include/linux/susfs.h
           cp "${SUSFS_DIR}/kernel_patches/include/linux/susfs_def.h" include/linux/susfs_def.h
           patch --forward -p1 < "${SUSFS_DIR}/kernel_patches/50_add_susfs_in_kernel-4.19.patch"
-          echo "[+] SUSFS 4.19 compatibility prepared."
+
+          # Remove the stale unconditional stop only after the updated 4.19 patch applies.
+          COMPAT="KernelSU/kernel/tools/susfs_compat.mk"
+          if [ -f "${COMPAT}" ]; then
+              python3 - "${COMPAT}" <<'PYCOMPAT'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1])
+          s = p.read_text()
+          guard = (
+              "$(info -- $(REPO_NAME): susfs has NOT update with latest KernelSU source)\n"
+              "$(info -- $(REPO_NAME): Please wait simonpunk update)\n"
+              "$(error Please wait susfs update.)"
+          )
+          if guard in s:
+              p.write_text(s.replace(guard, "$(info -- SUSFS 4.19 sources updated to v1.5.9)"))
+              print("[+] Removed stale SUSFS update stop after applying v1.5.9 sources.")
+          else:
+              print("[i] No exact stale SUSFS guard found; leaving compatibility file unchanged.")
+          PYCOMPAT
+          fi
+          echo "[+] SUSFS v1.5.9 Linux 4.19 sources prepared."
 '''
           if marker not in text:
               raise SystemExit("KernelSU setup marker not found in build_kernel.sh")
-          if "Pinning BakaSU to a SUSFS-compatible commit" not in text:
+          if "Updating SUSFS kernel-side sources for Linux 4.19" not in text:
               text = text.replace(marker, marker + "\n" + block, 1)
               path.write_text(text)
           PY
