@@ -57,11 +57,7 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     # Keep ReSukiSU on upstream main; remove only the stale SUSFS compatibility stop.
     COMPAT="KernelSU/kernel/tools/susfs_compat.mk"
     if [ -f "$COMPAT" ]; then
-        sed -i \\
-            -e '/susfs has NOT update with latest KernelSU source/d' \\
-            -e '/Please wait simonpunk update/d' \\
-            -e '/error Please wait susfs update/d' \\
-            "$COMPAT"
+        sed -i -e '/susfs has NOT update with latest KernelSU source/d' -e '/Please wait simonpunk update/d' -e '/error Please wait susfs update/d' "$COMPAT"
     fi
 fi
 
