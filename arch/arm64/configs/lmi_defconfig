@@ -779,7 +779,6 @@ CONFIG_TECHPACK_CAMERA_XIAOMI=y
 
 
 
-
 # Kernel configurations for full DroidSpaces support
 # Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
 
@@ -810,6 +809,9 @@ CONFIG_CGROUP_NET_PRIO=y
 # accounting that reports CPU usage on kernels before 4.15.
 # Optional: a limit whose option is missing is skipped with a warning
 CONFIG_MEMCG=y
+# Keeps a memory-limited container out of swap. Before 6.1 only; before 5.8
+# also boot with swapaccount=1 unless CONFIG_MEMCG_SWAP_ENABLED=y
+CONFIG_MEMCG_SWAP=y
 CONFIG_CFS_BANDWIDTH=y
 CONFIG_CGROUP_PIDS=y
 CONFIG_CGROUP_CPUACCT=y
@@ -881,7 +883,6 @@ CONFIG_USER_NS=y
 
 
 
-
 # UFW & FAIL2BAN CORE
 CONFIG_NETFILTER_XT_MATCH_COMMENT=y
 CONFIG_NETFILTER_XT_MATCH_STATE=y
@@ -906,3 +907,4 @@ CONFIG_NETFILTER_XT_SET=y
 CONFIG_NETFILTER_NETLINK_QUEUE=y
 CONFIG_NETFILTER_NETLINK_LOG=y
 CONFIG_NETFILTER_XT_TARGET_NFLOG=y
+
