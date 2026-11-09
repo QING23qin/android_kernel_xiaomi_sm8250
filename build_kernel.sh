@@ -83,7 +83,7 @@ else
 fi
 
 echo "[*] Verifying LMI board and DT overlay selection..."
-for symbol in MACH_XIAOMI_LMI BOARD_XIAOMI BOARD_XIAOMI_SM8250 BOARD_LMI BUILD_ARM64_DT_OVERLAY; do
+for symbol in MACH_XIAOMI MACH_XIAOMI_SM8250 MACH_XIAOMI_LMI BUILD_ARM64_DT_OVERLAY; do
     grep -qx "CONFIG_${symbol}=y" "$OUT_DIR/.config" || {
         echo "[!] CONFIG_${symbol} is not enabled after config merge." >&2
         exit 1
@@ -91,7 +91,7 @@ for symbol in MACH_XIAOMI_LMI BOARD_XIAOMI BOARD_XIAOMI_SM8250 BOARD_LMI BUILD_A
 done
 
 echo "[*] Final config summary:"
-grep -E '^CONFIG_(MACH_XIAOMI_LMI|BOARD_XIAOMI|BOARD_XIAOMI_SM8250|BOARD_LMI|LOCALVERSION|PID_NS|UTS_NS|IPC_NS|NET_NS|CGROUP_PIDS|CGROUP_DEVICE|CGROUP_NET_PRIO|DEVTMPFS|OVERLAY_FS|TMPFS_POSIX_ACL|TMPFS_XATTR)=' "$OUT_DIR/.config" || true
+grep -E '^CONFIG_(MACH_XIAOMI|MACH_XIAOMI_SM8250|MACH_XIAOMI_LMI|LOCALVERSION|PID_NS|UTS_NS|IPC_NS|NET_NS|CGROUP_PIDS|CGROUP_DEVICE|CGROUP_NET_PRIO|DEVTMPFS|OVERLAY_FS|TMPFS_POSIX_ACL|TMPFS_XATTR)=' "$OUT_DIR/.config" || true
 
 echo "==========================================="
 echo "[*] Building LMI kernel, DTBs and DTBO..."
