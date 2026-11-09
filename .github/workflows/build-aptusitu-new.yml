@@ -70,9 +70,8 @@ jobs:
           echo "$HOME/zyc-clang/bin" >> "$GITHUB_PATH"
 
       - name: Configure ccache
-        env:
         run: |
-          mkdir -p "$HOME/.cache/ccache_mikernel"
+          mkdir -p "$CCACHE_DIR"
           ccache -M 10G
           ccache -s
 
@@ -80,7 +79,6 @@ jobs:
         env:
           ENABLE_DROIDSPACES: ${{ inputs.enable_droidspaces && '1' || '0' }}
           CLEAN_BUILD: ${{ inputs.clean_build && '1' || '0' }}
-          CCACHE_DIR: ${{ runner.temp }}/ccache
         shell: bash
         run: |
           set -euo pipefail
