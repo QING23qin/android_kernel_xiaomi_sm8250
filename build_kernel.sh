@@ -65,7 +65,17 @@ echo "==========================================="
 echo " [*] Initializing AnyKernel3 Workspace"
 echo "==========================================="
 rm -rf anykernel
-git clone https://github.com/AstideLabs/AnyKernel3 -b kona --single-branch --depth=1 anykernel
+mkdir -p anykernel
+ANYKERNEL_ARCHIVE="$(mktemp)"
+ANYKERNEL_URL="https://codeload.github.com/AstideLabs/AnyKernel3/tar.gz/refs/heads/kona"
+echo "[*] Downloading AnyKernel3 kona archive..."
+curl -fL --retry 3 --retry-delay 2 "$ANYKERNEL_URL" -o "$ANYKERNEL_ARCHIVE"
+tar -xzf "$ANYKERNEL_ARCHIVE" --strip-components=1 -C anykernel
+rm -f "$ANYKERNEL_ARCHIVE"
+test -f anykernel/anykernel.sh || {
+    echo "[!] AnyKernel3 archive is invalid: anykernel.sh not found"
+    exit 1
+}
 sed -i "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" anykernel/anykernel.sh
 
 # DroidSpaces cgroup-v2 compatibility.
