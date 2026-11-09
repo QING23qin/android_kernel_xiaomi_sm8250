@@ -49,7 +49,7 @@ jobs:
       - name: Restore compiler cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ccache_mikernel
+          path: ${{ runner.temp }}/ccache
           key: ${{ runner.os }}-aptusitu-new-lmi-${{ hashFiles('**/*.c', '**/*.h', '**/*.S', '**/*.s') }}-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-aptusitu-new-lmi-
