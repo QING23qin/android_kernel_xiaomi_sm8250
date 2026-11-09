@@ -82,8 +82,16 @@ else
     make O="$OUT_DIR" "${MAKE_ARGS[@]}" olddefconfig
 fi
 
+echo "[*] Verifying LMI board and DT overlay selection..."
+for symbol in MACH_XIAOMI_LMI BOARD_XIAOMI BOARD_XIAOMI_SM8250 BOARD_LMI BUILD_ARM64_DT_OVERLAY; do
+    grep -qx "CONFIG_${symbol}=y" "$OUT_DIR/.config" || {
+        echo "[!] CONFIG_${symbol} is not enabled after config merge." >&2
+        exit 1
+    }
+done
+
 echo "[*] Final config summary:"
-grep -E '^CONFIG_(MACH_XIAOMI_LMI|LOCALVERSION|PID_NS|UTS_NS|IPC_NS|NET_NS|CGROUP_PIDS|CGROUP_DEVICE|CGROUP_NET_PRIO|DEVTMPFS|OVERLAY_FS|TMPFS_POSIX_ACL|TMPFS_XATTR)=' "$OUT_DIR/.config" || true
+grep -E '^CONFIG_(MACH_XIAOMI_LMI|BOARD_XIAOMI|BOARD_XIAOMI_SM8250|BOARD_LMI|LOCALVERSION|PID_NS|UTS_NS|IPC_NS|NET_NS|CGROUP_PIDS|CGROUP_DEVICE|CGROUP_NET_PRIO|DEVTMPFS|OVERLAY_FS|TMPFS_POSIX_ACL|TMPFS_XATTR)=' "$OUT_DIR/.config" || true
 
 echo "==========================================="
 echo "[*] Building LMI kernel, DTBs and DTBO..."
@@ -105,6 +113,14 @@ cp "$OUT_DIR/.config" "$ARTIFACT_DIR/kernel.config"
 [[ ! -s "$OUT_DIR/arch/arm64/boot/dtbo.img" ]] || cp "$OUT_DIR/arch/arm64/boot/dtbo.img" "$ARTIFACT_DIR/dtbo.img"
 
 DTS_OUT="$OUT_DIR/arch/arm64/boot/dts/vendor/qcom"
+if [[ ! -s "$DTS_OUT/lmi-sm8250-overlay.dtbo" ]]; then
+    echo "[!] LMI DT overlay was not generated; check BOARD_LMI and DTS configuration." >&2
+    exit 1
+fi
+if [[ ! -s "$OUT_DIR/arch/arm64/boot/dtbo.img" ]]; then
+    echo "[!] dtbo.img was not generated." >&2
+    exit 1
+fi
 if [[ -d "$DTS_OUT" ]]; then
     find "$DTS_OUT" -maxdepth 1 -type f \
         \( -name 'kona*.dtb' -o -name 'lmi*.dtb' -o -name 'lmi*.dtbo' \) \
