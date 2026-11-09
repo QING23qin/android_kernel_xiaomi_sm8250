@@ -90,7 +90,7 @@ jobs:
       - name: Upload kernel build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: APTKernel-LMI-${{ inputs.source_ref }}-${{ github.run_number }}
+          name: APTKernel-LMI-${{ github.run_number }}
           path: APTKernel_LMI_*.tar.gz
           if-no-files-found: error
           compression-level: 0
