@@ -27,6 +27,8 @@ jobs:
     name: LMI | DroidSpaces=${{ inputs.enable_droidspaces }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      CCACHE_DIR: ${{ runner.temp }}/ccache
 
     steps:
       - name: Checkout selected source branch
