@@ -70,6 +70,7 @@ jobs:
           echo "$HOME/zyc-clang/bin" >> "$GITHUB_PATH"
 
       - name: Configure ccache
+        env:
         run: |
           mkdir -p "$HOME/.cache/ccache_mikernel"
           ccache -M 10G
