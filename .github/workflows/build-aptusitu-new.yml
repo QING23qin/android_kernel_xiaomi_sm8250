@@ -1,0 +1,96 @@
+name: Build LMI Kernel (aptusitu-new)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "要构建的源码分支"
+        required: true
+        type: string
+        default: "android17-aptusitu-new"
+      enable_droidspaces:
+        description: "启用并验证 DroidSpaces 所需内核配置"
+        required: true
+        type: boolean
+        default: true
+      clean_build:
+        description: "清理 out_lmi 后重新构建"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-lmi:
+    name: LMI | DroidSpaces=${{ inputs.enable_droidspaces }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout selected source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex gawk git g++ gcc \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
+            libelf-dev liblz4-tool libncurses-dev libssl-dev \
+            libxml2 libxml2-utils lz4 make python3 rsync \
+            schedtool wget zlib1g-dev
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache_mikernel
+          key: ${{ runner.os }}-aptusitu-new-lmi-${{ hashFiles('**/*.c', '**/*.h', '**/*.S', '**/*.s') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-aptusitu-new-lmi-
+
+      - name: Set up Clang 16 toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/zyc-clang"
+          cd "$HOME/zyc-clang"
+          ARCHIVE="Clang-16.0.6-20260807.tar.gz"
+          URL="https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/$ARCHIVE"
+          wget -q --show-progress -O "$ARCHIVE" "$URL"
+          test -s "$ARCHIVE"
+          tar -zxf "$ARCHIVE"
+          test -x "$HOME/zyc-clang/bin/clang"
+          "$HOME/zyc-clang/bin/clang" --version
+          echo "$HOME/zyc-clang/bin" >> "$GITHUB_PATH"
+
+      - name: Configure ccache
+        run: |
+          mkdir -p "$HOME/.cache/ccache_mikernel"
+          ccache -M 10G
+          ccache -s
+
+      - name: Build LMI kernel
+        env:
+          ENABLE_DROIDSPACES: ${{ inputs.enable_droidspaces && '1' || '0' }}
+          CLEAN_BUILD: ${{ inputs.clean_build && '1' || '0' }}
+          CCACHE_DIR: ${{ runner.temp }}/ccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CCACHE_DIR"
+          ./build_kernel.sh lmi
+
+      - name: Upload kernel build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: APTKernel-LMI-${{ inputs.source_ref }}-${{ github.run_number }}
+          path: APTKernel_LMI_*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
