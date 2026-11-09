@@ -65,7 +65,7 @@ CONFIG_SETEND_EMULATION=y
 CONFIG_ARM64_SW_TTBR0_PAN=y
 # CONFIG_ARM64_VHE is not set
 CONFIG_RANDOMIZE_BASE=y
-CONFIG_CMDLINE="cgroup_disable=pressure ramoops_memreserve=4M"
+CONFIG_CMDLINE="cgroup_disable=pressure ramoops_memreserve=4M swapaccount=1"
 CONFIG_CMDLINE_EXTEND=y
 # CONFIG_EFI is not set
 CONFIG_BUILD_ARM64_UNCOMPRESSED_KERNEL=y
@@ -812,6 +812,7 @@ CONFIG_MEMCG=y
 # Keeps a memory-limited container out of swap. Before 6.1 only; before 5.8
 # also boot with swapaccount=1 unless CONFIG_MEMCG_SWAP_ENABLED=y
 CONFIG_MEMCG_SWAP=y
+CONFIG_MEMCG_SWAP_ENABLED=y
 CONFIG_CFS_BANDWIDTH=y
 CONFIG_CGROUP_PIDS=y
 CONFIG_CGROUP_CPUACCT=y
