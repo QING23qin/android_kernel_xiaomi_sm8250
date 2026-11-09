@@ -118,7 +118,8 @@ case "$ZIPFILE" in
   *"_AOSP_"*) KERNEL_FLAVOR=aosp ;;
   *"_MIUI_"*) KERNEL_FLAVOR=miui ;;
   *)
-    abort "Unable to identify AOSP/MIUI package flavor."
+    echo "[!] Unable to identify AOSP/MIUI package flavor."
+    exit 1
     ;;
 esac
 
