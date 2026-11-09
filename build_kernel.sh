@@ -123,7 +123,7 @@ case "$ZIPFILE" in
     ;;
 esac
 
-[ -f "$AKHOME/kernels/$KERNEL_FLAVOR/Image" ] || abort "Missing $KERNEL_FLAVOR kernel Image."
+[ -f "$AKHOME/kernels/$KERNEL_FLAVOR/Image" ] || { echo "[!] Missing $KERNEL_FLAVOR kernel Image."; exit 1; }
 cp -f "$AKHOME/kernels/$KERNEL_FLAVOR/Image" "$AKHOME/Image"
 
 if [ -f "$AKHOME/kernels/$KERNEL_FLAVOR/dtb" ]; then
