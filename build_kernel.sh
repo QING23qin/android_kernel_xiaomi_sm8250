@@ -62,21 +62,86 @@ wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
 sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
 
 echo "==========================================="
-echo " [*] Initializing AnyKernel3 Workspace"
+echo " [*] Initializing AnyKernel3 (official upstream)"
 echo "==========================================="
 rm -rf anykernel
 mkdir -p anykernel
 ANYKERNEL_ARCHIVE="$(mktemp)"
-ANYKERNEL_URL="https://codeload.github.com/AstideLabs/AnyKernel3/tar.gz/refs/heads/kona"
-echo "[*] Downloading AnyKernel3 kona archive..."
+ANYKERNEL_URL="https://codeload.github.com/osm0sis/AnyKernel3/tar.gz/refs/heads/master"
+echo "[*] Downloading osm0sis/AnyKernel3 master..."
 curl -fL --retry 3 --retry-delay 2 "$ANYKERNEL_URL" -o "$ANYKERNEL_ARCHIVE"
 tar -xzf "$ANYKERNEL_ARCHIVE" --strip-components=1 -C anykernel
 rm -f "$ANYKERNEL_ARCHIVE"
-test -f anykernel/anykernel.sh || {
-    echo "[!] AnyKernel3 archive is invalid: anykernel.sh not found"
+
+test -f anykernel/tools/ak3-core.sh || {
+    echo "[!] Official AnyKernel3 archive is invalid: tools/ak3-core.sh not found"
     exit 1
 }
-sed -i "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" anykernel/anykernel.sh
+
+if [ "$DEVICE_NAME" != "lmi" ]; then
+    echo "[!] No verified AnyKernel3 device configuration for: $DEVICE_NAME"
+    echo "[!] Refusing to package with the upstream generic example script."
+    exit 1
+fi
+
+# Use the official AnyKernel3 core, but provide an lmi-specific installer.
+# The lmi/lmipro partition and slot settings are based on the existing
+# device-specific AnyKernel3 configuration; no unrelated ramdisk patches
+# from the upstream example are carried over.
+cat > anykernel/anykernel.sh <<'ANYKERNEL_EOF'
+### AnyKernel3 Ramdisk Mod Script
+## osm0sis @ xda-developers
+
+### AnyKernel setup
+properties() { '
+kernel.string=APTKernel for Xiaomi lmi/lmipro
+do.devicecheck=1
+do.modules=0
+do.systemless=1
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=lmi
+device.name2=lmipro
+supported.versions=11 - 15
+supported.patchlevels=
+supported.vendorpatchlevels=
+'; }
+
+# Xiaomi lmi uses the boot partition without slot suffix handling here.
+BLOCK=/dev/block/by-name/boot;
+IS_SLOT_DEVICE=0;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
+
+# Select the kernel flavor packed by build_kernel.sh.
+case "$ZIPFILE" in
+  *"_AOSP_"*) KERNEL_FLAVOR=aosp ;;
+  *"_MIUI_"*) KERNEL_FLAVOR=miui ;;
+  *)
+    abort "Unable to identify AOSP/MIUI package flavor."
+    ;;
+esac
+
+[ -f "$AKHOME/kernels/$KERNEL_FLAVOR/Image" ] || abort "Missing $KERNEL_FLAVOR kernel Image."
+cp -f "$AKHOME/kernels/$KERNEL_FLAVOR/Image" "$AKHOME/Image"
+
+if [ -f "$AKHOME/kernels/$KERNEL_FLAVOR/dtb" ]; then
+  cp -f "$AKHOME/kernels/$KERNEL_FLAVOR/dtb" "$AKHOME/dtb"
+fi
+
+if [ -f "$AKHOME/kernels/$KERNEL_FLAVOR/dtbo.img" ]; then
+  cp -f "$AKHOME/kernels/$KERNEL_FLAVOR/dtbo.img" "$AKHOME/dtbo.img"
+fi
+
+# Import official AnyKernel3 functions and initialize the target partition.
+. tools/ak3-core.sh;
+
+# Repack and flash boot, then flash dtbo.img when included.
+dump_boot;
+write_boot;
+ANYKERNEL_EOF
+
+echo "[+] Official AnyKernel3 core initialized with lmi/lmipro installer."
 
 # DroidSpaces cgroup-v2 compatibility.
 # Do not use an external unified-diff patch here. This kernel is a legacy
