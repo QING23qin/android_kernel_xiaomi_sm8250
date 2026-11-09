@@ -67,7 +67,9 @@ echo "==========================================="
 rm -rf anykernel
 mkdir -p anykernel
 ANYKERNEL_ARCHIVE="$(mktemp)"
-ANYKERNEL_URL="https://codeload.github.com/osm0sis/AnyKernel3/tar.gz/refs/heads/master"
+# Pin the official upstream revision for reproducible packaging.
+ANYKERNEL_UPSTREAM_COMMIT="41f04bdb4ee30a44e429c2c1131d5e8bb32b15f1"
+ANYKERNEL_URL="https://codeload.github.com/osm0sis/AnyKernel3/tar.gz/$ANYKERNEL_UPSTREAM_COMMIT"
 echo "[*] Downloading osm0sis/AnyKernel3 master..."
 curl -fL --retry 3 --retry-delay 2 "$ANYKERNEL_URL" -o "$ANYKERNEL_ARCHIVE"
 tar -xzf "$ANYKERNEL_ARCHIVE" --strip-components=1 -C anykernel
