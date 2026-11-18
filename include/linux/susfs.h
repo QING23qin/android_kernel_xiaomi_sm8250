@@ -9,22 +9,17 @@
 #include <linux/susfs_def.h>
 #include <linux/statfs.h>
 
-#define SUSFS_VERSION "v2.3.0"
+#define SUSFS_VERSION "v2.4.0"
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
 #define SUSFS_VARIANT "NON-GKI"
 #else
 #define SUSFS_VARIANT "GKI"
 #endif
 
-/*********/
-/* MACRO */
-/*********/
-#define getname_safe(name) (name == NULL ? ERR_PTR(-EINVAL) : getname(name))
-#define putname_safe(name) (IS_ERR(name) ? NULL : putname(name))
-
 /********/
 /* ENUM */
 /********/
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 enum UID_SCHEME {
 	UID_NON_APP_PROC = 0,
 	UID_ROOT_PROC_EXCEPT_SU_PROC,
@@ -32,6 +27,7 @@ enum UID_SCHEME {
 	UID_UMOUNTED_APP_PROC,
 	UID_UMOUNTED_PROC,
 };
+#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
 /**********/
 /* STRUCT */
@@ -48,7 +44,13 @@ struct st_susfs_sus_path_list {
 	struct st_susfs_sus_path                info;
 	char                                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 };
-#endif
+
+/* sus_path uid filter */
+struct st_susfs_sus_path_uid_filter {
+	char                                    app_strings[SUSFS_APP_STR_BUF_SIZE];
+	int                                     err;
+};
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -68,13 +70,13 @@ struct st_susfs_hide_sus_mnts_for_non_su_procs {
 #define KSTAT_SPOOF_ATIME_TV_NSEC (1 << 5)
 #define KSTAT_SPOOF_MTIME_TV_SEC (1 << 6)
 #define KSTAT_SPOOF_MTIME_TV_NSEC (1 << 7)
-#define KSTAT_SPOOF_CTIME_TV_SEC (1 < 8)
+#define KSTAT_SPOOF_CTIME_TV_SEC (1 << 8)
 #define KSTAT_SPOOF_CTIME_TV_NSEC (1 << 9)
 #define KSTAT_SPOOF_BLOCKS (1 << 10)
 #define KSTAT_SPOOF_BLKSIZE (1 << 11)
 
 struct st_susfs_sus_kstat {
-	int                                     is_statically;
+	bool                                    is_statically;
 	unsigned long                           target_ino;
 	char                                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	unsigned long                           spoofed_ino;
@@ -100,7 +102,7 @@ struct st_susfs_sus_kstat_hlist {
 	struct kstatfs                          spoofed_kstatfs;
 	int                                     spoofed_mnt_id;
 	bool                                    is_fuse;
-	struct st_susfs_sus_kstat               info;
+	struct st_susfs_sus_kstat                info;
 };
 #endif
 
@@ -146,7 +148,7 @@ struct st_susfs_open_redirect_hlist {
 	unsigned long                           redirected_dev;
 	int                                     spoofed_mnt_id;
 	struct kstatfs                          spoofed_kstatfs;
-	struct st_susfs_open_redirect           info;
+	struct st_susfs_open_redirect            info;
 	bool                                    reversed_lookup_only;
 };
 #endif
@@ -164,6 +166,14 @@ struct st_susfs_avc_log_spoofing {
 	bool                                    enabled;
 	int                                     err;
 };
+
+/* getpriority uid filter */
+#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+struct st_susfs_priority_uid_filter {
+	char                                    app_strings[SUSFS_APP_STR_BUF_SIZE];
+	int                                     err;
+};
+#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
 
 /* get enabled features */
 struct st_susfs_enabled_features {
@@ -190,7 +200,9 @@ struct st_susfs_version {
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 void susfs_add_sus_path(void __user **user_info);
 void susfs_add_sus_path_loop(void __user **user_info);
-#endif
+void susfs_set_sus_path_uid_filter(void __user **user_info);
+void susfs_parse_sus_path_app_strings(void);
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -228,6 +240,23 @@ void susfs_add_open_redirect(void __user **user_info);
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 void susfs_add_sus_map(void __user **user_info);
 #endif
+
+/* getpriority uid filter */
+#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+void susfs_set_priority_uid_filter(void __user **user_info);
+void susfs_parse_priority_app_strings(void);
+bool susfs_is_priority_uid_filtered(uid_t uid);
+#endif // #ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+
+/* sus_type - records type values hidden by ksu_type() */
+int susfs_add_sus_type(const char *secctx, u32 type_value);
+bool susfs_is_sus_type_rcu(u32 type_value);
+
+/* avd_allowed - restores the original avd->allowed recorded by ksu_allow() */
+int susfs_add_sus_avd_allowed_by_type(u32 s_type, u32 t_type, u32 c_type,
+				      u32 orig_avd_allowed);
+void susfs_spoof_avd_allowed_rcu(u32 s_type, u32 t_type, u32 c_type,
+				 u32 *avd_allowed);
 
 void susfs_set_avc_log_spoofing(void __user **user_info);
 
