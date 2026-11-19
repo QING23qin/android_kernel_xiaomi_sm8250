@@ -1039,9 +1039,6 @@ static int fg_gen4_get_prop_capacity(struct fg_dev *fg, int *val)
 		return 0;
 	}
 
-	if (fg->empty_restart_fg && (msoc == 0))
-		msoc = EMPTY_REPORT_SOC;
-
 	if (chip->soc_scale_mode) {
 		mutex_lock(&chip->soc_scale_lock);
 		*val = chip->soc_scale_msoc;
@@ -1054,6 +1051,13 @@ static int fg_gen4_get_prop_capacity(struct fg_dev *fg, int *val)
 			*val = fg->maint_soc;
 		else
 			*val = msoc;
+
+		if (fg->empty_restart_fg) {
+			if (*val == 0)
+				*val = EMPTY_REPORT_SOC;
+			else
+				fg->empty_restart_fg = false;
+		}
 	}
 
 	return 0;
@@ -1160,7 +1164,7 @@ static inline void get_esr_meas_current(int curr_ma, u8 *val)
 static int fg_gen4_get_power(struct fg_gen4_chip *chip, int *val, bool average)
 {
 	struct fg_dev *fg = &chip->fg;
-	int rc, v_min, v_pred, esr_uohms, rslow_uohms;
+	int rc, v_min, v_pred, esr_uohms, rslow_uohms, divisor;
 	s64 power;
 
 	rc = fg_get_sram_prop(fg, FG_SRAM_VOLTAGE_PRED, &v_pred);
@@ -1182,10 +1186,12 @@ static int fg_gen4_get_power(struct fg_gen4_chip *chip, int *val, bool average)
 		return rc;
 	}
 
-	if (average)
-		power = div_s64(power, esr_uohms + rslow_uohms);
-	else
-		power = div_s64(power, esr_uohms);
+	divisor = average ? esr_uohms + rslow_uohms : esr_uohms;
+	if (!divisor) {
+		pr_err("Invalid ESR/RSLOW, cannot calculate power\n");
+		return -EINVAL;
+	}
+	power = div_s64(power, divisor);
 
 	pr_debug("V_min: %d V_pred: %d ESR: %d Rslow: %d power: %lld\n", v_min,
 		v_pred, esr_uohms, rslow_uohms, power);
@@ -1200,7 +1206,7 @@ static int fg_gen4_get_power(struct fg_gen4_chip *chip, int *val, bool average)
 static int fg_gen4_get_prop_soc_scale(struct fg_gen4_chip *chip)
 {
 	struct fg_dev *fg = &chip->fg;
-	int rc;
+	int rc, ocv;
 
 	rc = fg_get_sram_prop(fg, FG_SRAM_VBAT_FLT, &chip->vbatt_avg);
 	if (rc < 0) {
@@ -1227,20 +1233,50 @@ static int fg_gen4_get_prop_soc_scale(struct fg_gen4_chip *chip)
 	fg_dbg(fg, FG_FVSS, "Vbatt now=%d Vbatt avg=%d Vbatt res=%d\n",
 		chip->vbatt_now, chip->vbatt_avg, chip->vbatt_res);
 
+	rc = fg_get_sram_prop(fg, FG_SRAM_OCV, &ocv);
+	if (rc < 0) {
+		ocv = 0;
+		rc = 0;
+	}
+	ocv /= 1000;
+
 	/* Exit rapid soc decrease mode when battery voltage > 3700mV to recover real soc value */
 	if (chip->vbatt_avg > 3650) {
-		if (chip->dt.rapid_soc_dec_en) {
-			if(chip->rapid_soc_dec_en) {
-				fg_dbg(fg, FG_STATUS, "Vbatt > 3650, exit rapid soc decrease\n", fg->charge_status);
-				rc = fg_gen4_rapid_soc_config(chip, false);
-				if (rc < 0)
-					pr_err("Error in configuring for rapid SOC reduction rc:%d\n",
-						rc);
-				chip->rapid_soc_dec_en = false;
-			}
-		} else if (chip->vbatt_low) {
-			fg_dbg(fg, FG_STATUS, "Vbatt > 3650, reset vbatt_low = false\n", fg->charge_status);
-			chip->vbatt_low = false;
+		chip->vbat_critical_low_count = 0;
+		if (chip->dt.rapid_soc_dec_en && chip->rapid_soc_dec_en) {
+			fg_dbg(fg, FG_STATUS,
+				"Vbatt > 3650, exit rapid soc decrease\n",
+				fg->charge_status);
+			rc = fg_gen4_rapid_soc_config(chip, false);
+			if (rc < 0)
+				pr_err("Error in configuring for rapid SOC reduction rc:%d\n",
+					rc);
+			chip->rapid_soc_dec_en = false;
+			rc = 0;
+		}
+	}
+
+	if (chip->vbatt_low &&
+	    ((ocv > 0 && ocv > 3650) ||
+	     (!ocv && chip->vbatt_avg > 3650))) {
+		fg_dbg(fg, FG_STATUS, "OCV %d recovered, reset vbatt_low\n",
+			ocv);
+		chip->vbatt_low = false;
+		if (batt_psy_initialized(fg))
+			power_supply_changed(fg->batt_psy);
+	}
+
+	if (fg->soc_reporting_ready && ocv > 0 &&
+			fg->charge_status == POWER_SUPPLY_STATUS_DISCHARGING &&
+			ocv <= chip->dt.cutoff_volt_mv) {
+		if (!chip->vbatt_low) {
+			fg_dbg(fg, FG_STATUS,
+				"OCV %d <= cutoff %d, force empty\n",
+				ocv, chip->dt.cutoff_volt_mv);
+			chip->vbatt_low = true;
+			fg->empty_restart_fg = false;
+			if (batt_psy_initialized(fg))
+				power_supply_changed(fg->batt_psy);
 		}
 	}
 
@@ -3591,14 +3627,14 @@ static int fg_gen4_validate_soc_scale_mode(struct fg_gen4_chip *chip)
 	struct fg_dev *fg = &chip->fg;
 	int rc, vbatt_scale_mv;
 
-	if (!chip->dt.soc_scale_mode)
-		return 0;
-
 	rc = fg_gen4_get_prop_soc_scale(chip);
 	if (rc < 0) {
 		pr_err("Failed to get soc scale props\n");
 		goto fail_soc_scale;
 	}
+
+	if (!chip->dt.soc_scale_mode)
+		return 0;
 
 	rc = fg_get_msoc(fg, &chip->msoc_actual);
 	if (rc < 0) {
@@ -5006,7 +5042,7 @@ static int fg_gen4_set_vbatt_full_vol(struct fg_dev *fg, bool enable_ffc)
 		volt = fg->bp.vbatt_full_mv;
 
 	if (volt < 0)
-		return rc;
+		return -EINVAL;
 
 	rc = fg_set_constant_chg_voltage(fg, volt * 1000);
 	if (rc < 0) {
@@ -5183,7 +5219,8 @@ static int fg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CAPACITY:
 		rc = fg_gen4_get_prop_capacity(fg, &pval->intval);
 		//Using smooth battery capacity.
-		if (fg->param.batt_soc >= 0 && !chip->rapid_soc_dec_en && !chip->soc_scale_mode)
+		if (fg->param.batt_soc >= 0 && !chip->rapid_soc_dec_en &&
+				!chip->soc_scale_mode && !chip->vbatt_low)
 			pval->intval = fg->param.batt_soc;
 
 		if (chip->dt.fg_increase_100soc_time) {
@@ -5199,6 +5236,8 @@ static int fg_psy_get_property(struct power_supply *psy,
 				else
 					shutdown_voltage = SHUTDOWN_DELAY_VOL;
 				rc = fg_get_battery_voltage(fg, &vbatt_uv);
+				if (rc < 0)
+					break;
 				if (vbatt_uv/1000 > shutdown_voltage
 					&& fg->charge_status != POWER_SUPPLY_STATUS_CHARGING) {
 					fg->shutdown_delay = true;
@@ -7314,6 +7353,10 @@ static void soc_monitor_work(struct work_struct *work)
 		if (rc < 0)
 			pr_err("fg_dynamic_set_cutoff_voltage set failed\n");
 	}
+
+	rc = fg_gen4_get_prop_soc_scale(chip);
+	if (rc < 0)
+		pr_err("Failed to get soc scale props, rc=%d\n", rc);
 
 	if (fg->soc_reporting_ready)
 		fg_battery_soc_smooth_tracking(chip);
