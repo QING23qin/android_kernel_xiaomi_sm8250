@@ -1,7 +1,6 @@
-# 基于 ApartTUSITU's Xiaomi SM8250 Kernel 项目
-# 添加Droidspaces的内核配置（LMI内核）
+## 基于 ApartTUSITU's Xiaomi SM8250 Kernel 项目，添加Droidspaces的内核配置（LMI内核）
 
-
+——————————————————————————————————————————————————————————————————————————————————————————
 
 # ApartTUSITU's Xiaomi SM8250 Kernel  
 
