@@ -23,7 +23,7 @@ on:
           - thyme
           - umi
       ksu:
-        description: Enable KernelSU (ReSukiSU)
+        description: Enable KernelSU (BaKaSu)
         required: true
         default: false
         type: boolean
