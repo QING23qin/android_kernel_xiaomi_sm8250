@@ -6634,19 +6634,6 @@ abort_change:
 	return error;
 }
 
-#ifdef CONFIG_KSU_SUSFS
-extern int my_setprocattr(const char *name, void *value, size_t size);
-
-/*
- * Current BakaSU moved selinux_hide into the kernel and no longer exports
- * this; fall back to the stock hook.  HyperSU still exports it and overrides
- * this weak definition at link time.
- */
-__weak int my_setprocattr(const char *name, void *value, size_t size)
-{
-	return selinux_setprocattr(name, value, size);
-}
-
 static int handle_selinux_setprocattr(const char *name, void *value, size_t size)
 {
 	if (likely(!strcmp(name, "current") &&
