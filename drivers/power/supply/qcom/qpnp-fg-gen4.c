@@ -330,6 +330,8 @@ struct fg_gen4_chip {
 	int			vbatt_avg;
 	int			vbatt_now;
 	int			vbatt_res;
+	int			ocv_mv;
+	unsigned long		boot_grace_until;
 	int			scale_timer;
 	int			current_now;
 	int			calib_level;
@@ -1239,6 +1241,7 @@ static int fg_gen4_get_prop_soc_scale(struct fg_gen4_chip *chip)
 		rc = 0;
 	}
 	ocv /= 1000;
+	chip->ocv_mv = ocv;
 
 	/* Exit rapid soc decrease mode when battery voltage > 3700mV to recover real soc value */
 	if (chip->vbatt_avg > 3650) {
@@ -1256,23 +1259,27 @@ static int fg_gen4_get_prop_soc_scale(struct fg_gen4_chip *chip)
 		}
 	}
 
-	if (chip->vbatt_low &&
-	    ((ocv > 0 && ocv > 3650) ||
-	     (!ocv && chip->vbatt_avg > 3650))) {
-		fg_dbg(fg, FG_STATUS, "OCV %d recovered, reset vbatt_low\n",
-			ocv);
+	if (chip->vbatt_low && chip->vbatt_avg > 3650 &&
+	    ((ocv > 0 && ocv > 3650) || !ocv)) {
+		fg_dbg(fg, FG_STATUS,
+			"OCV %d/Vbatt %d recovered, reset vbatt_low\n",
+			ocv, chip->vbatt_avg);
 		chip->vbatt_low = false;
 		if (batt_psy_initialized(fg))
 			power_supply_changed(fg->batt_psy);
 	}
 
-	if (fg->soc_reporting_ready && ocv > 0 &&
+	if (fg->soc_reporting_ready &&
 			fg->charge_status == POWER_SUPPLY_STATUS_DISCHARGING &&
-			ocv <= chip->dt.cutoff_volt_mv) {
+			((ocv > 0 && ocv <= chip->dt.cutoff_volt_mv) ||
+			 (time_after(jiffies, chip->boot_grace_until) &&
+			  chip->vbatt_avg > 0 &&
+			  chip->dt.empty_volt_mv > 0 &&
+			  chip->vbatt_avg <= chip->dt.empty_volt_mv + 100))) {
 		if (!chip->vbatt_low) {
 			fg_dbg(fg, FG_STATUS,
-				"OCV %d <= cutoff %d, force empty\n",
-				ocv, chip->dt.cutoff_volt_mv);
+				"OCV %d/Vbatt %d <= cutoff, force empty\n",
+				ocv, chip->vbatt_avg);
 			chip->vbatt_low = true;
 			fg->empty_restart_fg = false;
 			if (batt_psy_initialized(fg))
@@ -3546,6 +3553,8 @@ static int fg_gen4_set_vbatt_tau(struct fg_gen4_chip *chip, u8 vbatt_tau)
 	return rc;
 }
 
+#define FVSS_BOOT_GRACE_MS	120000
+
 static int fg_gen4_enter_soc_scale(struct fg_gen4_chip *chip)
 {
 	struct fg_dev *fg = &chip->fg;
@@ -3560,15 +3569,25 @@ static int fg_gen4_enter_soc_scale(struct fg_gen4_chip *chip)
 	/* Set entry FVS SOC equal to current H/W reported SOC */
 	if (chip->dt.fg_increase_100soc_time)
 		soc = fg->param.smooth_batt_soc;
+	if (soc <= 0) {
+		fg_dbg(fg, FG_FVSS, "Skip FVSS with SOC %d\n", soc);
+		return -EINVAL;
+	}
 	chip->soc_scale_msoc = chip->prev_soc_scale_msoc = soc;
 	chip->scale_timer = chip->dt.scale_timer_ms;
 	/*
-	 * Calculate the FVS slope to linearly calculate SOC
-	 * based on filtered battery voltage.
+	 * Calculate the FVS slope to linearly calculate SOC from the
+	 * open-circuit voltage when available.
 	 */
-	chip->soc_scale_slope =
+	if (chip->ocv_mv > chip->dt.cutoff_volt_mv)
+		chip->soc_scale_slope =
+			DIV_ROUND_CLOSEST(chip->ocv_mv -
+					  chip->dt.cutoff_volt_mv,
+					  chip->soc_scale_msoc);
+	else
+		chip->soc_scale_slope =
 			DIV_ROUND_CLOSEST(chip->vbatt_res,
-					chip->soc_scale_msoc);
+					  chip->soc_scale_msoc);
 	if (chip->soc_scale_slope <= 0) {
 		pr_err("Error in slope calculated = %d\n",
 			chip->soc_scale_slope);
@@ -3627,14 +3646,14 @@ static int fg_gen4_validate_soc_scale_mode(struct fg_gen4_chip *chip)
 	struct fg_dev *fg = &chip->fg;
 	int rc, vbatt_scale_mv;
 
+	if (!chip->dt.soc_scale_mode)
+		return 0;
+
 	rc = fg_gen4_get_prop_soc_scale(chip);
 	if (rc < 0) {
 		pr_err("Failed to get soc scale props\n");
 		goto fail_soc_scale;
 	}
-
-	if (!chip->dt.soc_scale_mode)
-		return 0;
 
 	rc = fg_get_msoc(fg, &chip->msoc_actual);
 	if (rc < 0) {
@@ -4400,7 +4419,7 @@ static void soc_scale_work(struct work_struct *work)
 	struct fg_dev *fg = &chip->fg;
 	struct timespec last_change_time = fg->scale_soc_change_time;
 	int soc, soc_thr_percent, rc, soc_changed, time_since_last_change_sec;
-	int delta_time = 0;
+	int delta_time = 0, res;
 
 	if (!chip->soc_scale_mode)
 		return;
@@ -4425,8 +4444,15 @@ static void soc_scale_work(struct work_struct *work)
 		chip->vbatt_res = 0;
 
 	mutex_lock(&chip->soc_scale_lock);
-	soc = DIV_ROUND_CLOSEST(chip->vbatt_res,
-				chip->soc_scale_slope);
+	if (chip->ocv_mv > 0) {
+		res = chip->ocv_mv - chip->dt.cutoff_volt_mv;
+		if (res < 0)
+			res = 0;
+		soc = DIV_ROUND_CLOSEST(res, chip->soc_scale_slope);
+	} else {
+		/* Without OCV keep the current scaled SOC */
+		soc = chip->prev_soc_scale_msoc;
+	}
 	chip->soc_scale_msoc = soc;
 	chip->scale_timer = chip->dt.scale_timer_ms;
 
@@ -4480,8 +4506,6 @@ static void soc_scale_work(struct work_struct *work)
 
 	mutex_unlock(&chip->soc_scale_lock);
 	if (chip->prev_soc_scale_msoc != chip->soc_scale_msoc) {
-		/* update MSOC */
-		fg_gen4_write_scale_msoc(chip);
 		if (batt_psy_initialized(fg))
 			power_supply_changed(fg->batt_psy);
 	}
@@ -5289,9 +5313,13 @@ static int fg_psy_get_property(struct power_supply *psy,
 		pval->intval = div_s64((int64_t)val * 10000,  CC_SOC_30BIT);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		if (fg->battery_missing)
+		if (fg->battery_missing) {
 			pval->intval = 3700000;
-		else
+			break;
+		}
+		/* Report the filtered voltage so the UI does not track load transients */
+		rc = fg_get_sram_prop(fg, FG_SRAM_VBAT_FLT, &pval->intval);
+		if (rc < 0 || pval->intval <= 0)
 			rc = fg_get_battery_voltage(fg, &pval->intval);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
@@ -7077,20 +7105,6 @@ static int fg_gen4_parse_dt(struct fg_gen4_chip *chip)
 static int scale_count;
 extern bool off_charge_flag;
 
-#define SMOOTH_VOLT_LEN         4
-
-struct LowSoc_HighVolt_Smooth{
-	int volt_lim;
-	int time;
-};
-
-struct LowSoc_HighVolt_Smooth lowsoc_highvolt_smooth[SMOOTH_VOLT_LEN] = {
-	{0,    10},
-	{3400, 30},
-	{3500, 45},
-	{3600, 60},
-};
-
 static void fg_battery_soc_smooth_tracking(struct fg_gen4_chip *chip)
 {
 	struct fg_dev *fg = &chip->fg;
@@ -7099,7 +7113,6 @@ static void fg_battery_soc_smooth_tracking(struct fg_gen4_chip *chip)
 	int last_batt_soc = fg->param.batt_soc;
 	int time_since_last_change_sec;
 	int last_smooth_batt_soc = fg->param.smooth_batt_soc;
-	int i;
 
 	struct timespec last_change_time = fg->param.last_soc_change_time;
 
@@ -7128,17 +7141,6 @@ static void fg_battery_soc_smooth_tracking(struct fg_gen4_chip *chip)
 			delta_time = time_since_last_change_sec / 20;
 	}
 
-	//increase unit_time when low power but high voltage, to prevent cliff fall when low power but high voltage
-	if(fg->param.batt_raw_soc == 0 && last_batt_soc > 1){
-		for(i = SMOOTH_VOLT_LEN; i > 0; i--){
-			if(fg->param.batt_mv > lowsoc_highvolt_smooth[i-1].volt_lim){
-				delta_time = time_since_last_change_sec / lowsoc_highvolt_smooth[i-1].time;
-				break;
-			}
-		}
-	}	
-
-
 	if (delta_time < 0)
 		delta_time = 0;
 
@@ -7149,19 +7151,24 @@ static void fg_battery_soc_smooth_tracking(struct fg_gen4_chip *chip)
 				&& fg->param.batt_raw_soc >= 95
 				&& fg->charge_status == POWER_SUPPLY_STATUS_FULL)
 			// Unlikely status
-			last_batt_soc = last_batt_soc + soc_changed;
+			last_batt_soc = fg->param.update_now ?
+				100 : last_batt_soc + soc_changed;
 		else if (last_batt_soc < fg->param.batt_raw_soc &&
 			fg->param.batt_ma < 0)
 			/* Battery in charging status
 			* update the soc when resuming device
 			*/
-			last_batt_soc = last_batt_soc + soc_changed;
+			last_batt_soc = fg->param.update_now ?
+				fg->param.batt_raw_soc : last_batt_soc + soc_changed;
 		else if (last_batt_soc > fg->param.batt_raw_soc
 					&& fg->param.batt_ma > 0)
 			/* Battery in discharging status
 			* update the soc when resuming device
 			*/
-			last_batt_soc = last_batt_soc - soc_changed;
+			last_batt_soc = fg->param.update_now ?
+				fg->param.batt_raw_soc : last_batt_soc - soc_changed;
+
+		fg->param.update_now = false;
 	} else {
 		last_batt_soc = fg->param.batt_raw_soc;
 	}
@@ -7471,6 +7478,8 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	fg->fake_chip_ok = -EINVAL;
 	fg->maxim_cycle_count = INT_MIN;
 	chip->vbat_critical_low_count = 0;
+	chip->boot_grace_until = jiffies +
+			msecs_to_jiffies(FVSS_BOOT_GRACE_MS);
 	fg->param.smooth_batt_soc = 0;
 	fg->param.smooth_low_batt_soc = 0;
 	fg->param.smooth_full_soc = 0;
@@ -7805,6 +7814,7 @@ static int fg_gen4_resume(struct device *dev)
 		schedule_delayed_work(&fg->sram_dump_work,
 				msecs_to_jiffies(fg_sram_dump_period_ms));
 
+	fg->param.update_now = true;
 	schedule_delayed_work(&fg->soc_monitor_work,
 				msecs_to_jiffies(MONITOR_SOC_WAIT_MS));
 	return 0;
